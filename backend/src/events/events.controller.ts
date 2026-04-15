@@ -8,12 +8,27 @@ export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
   @Post()
-  create(@Body() createEventDto: any) {
-    return this.eventsService.create(createEventDto);
+  create(@Body() dto: CreateEventDto) {
+    return this.eventsService.create(dto);
   }
 
   @Get()
   findAll() {
     return this.eventsService.findAll();
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.eventsService.findOne(+id); // + перетворює string на number
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateEventDto) {
+    return this.eventsService.update(+id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.eventsService.remove(+id);
   }
 }
