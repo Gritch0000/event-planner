@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import './App.css'; 
 
-//ГОЛОВНА СТОРІНКА
+// ГОЛОВНА СТОРІНКА
 const Home = () => {
   const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -16,25 +16,36 @@ const Home = () => {
     fetchEvents();
   }, []);
 
-  const fetchEvents = () => {
+  
+  const fetchEvents = async () => {
     setIsLoading(true);
-    axios.get('http://localhost:3000/events')
-      .then(res => {
-        
-        const savedParticipants = JSON.parse(localStorage.getItem('appParticipants') || '{}');
-        
-        const eventsWithParticipants = res.data.map((ev: any) => ({ 
-          ...ev, 
-          participants: savedParticipants[ev.id] || [] 
-        }));
-        
-        setEvents(eventsWithParticipants);
-        setIsLoading(false);
-      })
-      .catch(err => {
-        console.error("Помилка:", err);
-        setIsLoading(false);
-      });
+    try {
+      
+      const eventsRes = await axios.get('http://localhost:3000/events');
+      const eventsData = eventsRes.data;
+
+      
+      const eventsWithParticipants = await Promise.all(
+        eventsData.map(async (ev: any) => {
+          try {
+            const participantsRes = await axios.get(`http://localhost:3000/participants/event/${ev.id}`);
+            return {
+              ...ev,
+              participants: participantsRes.data || [] 
+            };
+          } catch (error) {
+            console.error(`Помилка завантаження учасників для події ${ev.id}`, error);
+            return { ...ev, participants: [] };
+          }
+        })
+      );
+
+      setEvents(eventsWithParticipants as any);
+    } catch (error) {
+      console.error('Помилка завантаження подій', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -65,35 +76,39 @@ const Home = () => {
     setParticipantEmail('');
   };
 
-  const submitParticipant = (e: React.FormEvent) => {
+  
+  const submitParticipant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!participantName || !participantEmail || joinEventId === null) return;
 
-    const newParticipant = {
-      id: Date.now(),
-      name: participantName,
-      email: participantEmail,
-      eventId: joinEventId 
-    };
-
-    setEvents((prevEvents: any) => {
-      const updatedEvents = prevEvents.map((ev: any) => {
-        if (ev.id === joinEventId) {
-          const updatedList = [...ev.participants, newParticipant];
-          
-          
-          const savedParticipants = JSON.parse(localStorage.getItem('appParticipants') || '{}');
-          savedParticipants[joinEventId] = updatedList;
-          localStorage.setItem('appParticipants', JSON.stringify(savedParticipants));
-
-          return { ...ev, participants: updatedList };
-        }
-        return ev;
+    try {
+      // 1. Відправляємо дані на сервер
+      const response = await axios.post('http://localhost:3000/participants', {
+        eventId: joinEventId,
+        name: participantName,
+        email: participantEmail
       });
-      return updatedEvents;
-    });
 
-    setJoinEventId(null); 
+      const newParticipant = response.data;
+
+      // 2. Оновлюємо інтерфейс React
+      setEvents((prevEvents: any) => {
+        return prevEvents.map((ev: any) => {
+          if (ev.id === joinEventId) {
+            return { ...ev, participants: [...(ev.participants || []), newParticipant] };
+          }
+          return ev;
+        });
+      });
+
+      // 3. Закриваємо модальне вікно і чистимо поля
+      setJoinEventId(null); 
+      setParticipantName('');
+      setParticipantEmail('');
+    } catch (error) {
+      console.error("Помилка при додаванні учасника:", error);
+      alert("Не вдалося додати учасника на сервер.");
+    }
   };
 
   const isEventSoon = (eventDateStr: string) => {
@@ -129,8 +144,8 @@ const Home = () => {
               </div>
 
               <div style={{ marginBottom: '15px', padding: '10px', background: '#e8f4f8', borderRadius: '8px', fontSize: '14px' }}>
-                <strong>👥 Учасники ({event.participants.length}):</strong> 
-                {event.participants.length > 0 ? (
+                <strong>👥 Учасники ({event.participants ? event.participants.length : 0}):</strong> 
+                {event.participants && event.participants.length > 0 ? (
                   <ul style={{ margin: '5px 0 0 20px', padding: 0 }}>
                     {event.participants.map((p: any) => (
                       <li key={p.id}>
@@ -173,7 +188,7 @@ const Home = () => {
   );
 };
 
-//СТОРІНКА СТВОРЕННЯ
+// СТОРІНКА СТВОРЕННЯ
 const CreateEvent = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -208,7 +223,7 @@ const CreateEvent = () => {
   );
 };
 
-//ПРО ПРОЄКТ
+// ПРО ПРОЄКТ
 const About = () => (
   <div style={{ background: 'white', padding: '30px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
     <h2 style={{ borderBottom: '2px solid #3498db', paddingBottom: '10px' }}>Про проєкт</h2>
@@ -228,14 +243,14 @@ const About = () => (
       <ul style={{ lineHeight: '1.8' }}>
         <li><strong>Backend:</strong> Nest.js, TypeScript</li>
         <li><strong>Frontend:</strong> React, Vite, React Router</li>
-        <li><strong>Інтеграція:</strong> Axios, LocalStorage</li>
+        <li><strong>Інтеграція:</strong> Axios REST API</li>
         <li><strong>Стилізація:</strong> CSS</li>
       </ul>
     </div>
   </div>
 );
 
-//НАВІГАЦІЯ
+// НАВІГАЦІЯ
 function App() {
   return (
     <Router>
